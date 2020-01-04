@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/smougenot/esp32_tft_sensors.svg?branch=master)](https://travis-ci.org/smougenot/esp32_tft_sensors)
+
 # Use TTGO T-Display fo sensors
 
 ![image](https://github.com/Xinyuan-LilyGO/TTGO-T-Display/blob/master/image/pinmap.jpg)
