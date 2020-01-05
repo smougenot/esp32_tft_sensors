@@ -54,6 +54,7 @@ int btnClick = false;
 float temperature = -1;
 float pressure = -1;
 float humidity = -1;
+float battery_voltage = -1;
 
 short loopCnt = 0;
 // timing
@@ -75,8 +76,7 @@ void showVoltage()
     static uint64_t timeStamp = 0;
     if (millis() - timeStamp > 1000) {
         timeStamp = millis();
-        uint16_t v = analogRead(ADC_PIN);
-        float battery_voltage = ((float)v / 4095.0) * 2.0 * 3.3 * (vref / 1000.0);
+        readVoltage();
         String voltage = "Voltage :" + String(battery_voltage) + "V";
         Serial.println(voltage);
         tft.fillScreen(TFT_BLACK);
@@ -181,7 +181,7 @@ void initTft() {
     tft.setSwapBytes(true);
     Serial.println("tft push image");
     tft.pushImage(0, 0,  240, 135, ttgo);
-    espDelay(2000);
+    espDelay(250);
 
     Serial.println("tft colors");
     tft.setRotation(0);
@@ -288,11 +288,17 @@ void loop()
             scanI2CBus(i2c_scan_start_address, i2c_scan_end_address, scanFunc);
         } else {
             readSensor();
-            displaySensor(temperature, humidity);
+            readVoltage();
+            displaySensor(temperature, humidity, battery_voltage);
             delay(1000);
         }
         espDelay(LOOP_WAIT);
     }
+}
+
+void readVoltage() {
+  uint16_t v = analogRead(ADC_PIN);
+  battery_voltage = ((float)v / 4095.0) * 2.0 * 3.3 * (vref / 1000.0);     
 }
 
 void readSensor() {
@@ -320,7 +326,7 @@ void readSensor() {
   Serial.println();
 }
 
-void displaySensor(float aTemperature, float aHumidity) {
+void displaySensor(float aTemperature, float aHumidity, float aVoltage) {
     tft.fillScreen(TFT_BLACK);
     tft.setTextDatum(TL_DATUM);
     tft.setRotation(0);
@@ -329,8 +335,9 @@ void displaySensor(float aTemperature, float aHumidity) {
     tft.setCursor(0, 0);
 
     sprintf(buff,
-            "%.2f C\n%.2f %%",
+            " %.2f C\n %.2f %%\n  %.2f V",
             aTemperature,
-            aHumidity);
+            aHumidity,
+            aVoltage);
     tft.println(buff);
 }
