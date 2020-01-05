@@ -321,5 +321,16 @@ void readSensor() {
 }
 
 void displaySensor(float aTemperature, float aHumidity) {
+    tft.fillScreen(TFT_BLACK);
+    tft.setTextDatum(TL_DATUM);
+    tft.setRotation(0);
+    tft.setTextColor(TFT_GREEN, TFT_BLACK);
+    tft.setTextSize(2);
+    tft.setCursor(0, 0);
 
+    sprintf(buff,
+            "%.2f C\n%.2f %%",
+            aTemperature,
+            aHumidity);
+    tft.println(buff);
 }
