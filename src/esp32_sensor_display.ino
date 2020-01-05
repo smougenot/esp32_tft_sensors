@@ -5,7 +5,12 @@
 #include <Button2.h>
 #include "esp_adc_cal.h"
 #include "bmp.h"
+#include <WiFiManager.h>          //https://github.com/tzapu/WiFiManager
 
+// I2C sensors
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BME280.h>
 
 #ifndef TFT_DISPOFF
 #define TFT_DISPOFF 0x28
@@ -20,13 +25,42 @@
 #define BUTTON_1        35
 #define BUTTON_2        0
 
+
+// wait time (ms)
+#define LOOP_WAIT 6 * 1000
+
+// I2C pins defaults on TTGO-Display
+// #define IC_CLK  22
+// #define IC_DATA 21
+// In case no device is responding, initiate a I2C bus scan
+byte i2c_scan_start_address = 8;       // lower addresses are reserved to prevent conflicts with other protocols
+byte i2c_scan_end_address = 119;       // higher addresses unlock other modes, like 10-bit addressing
+
 TFT_eSPI tft = TFT_eSPI(135, 240); // Invoke custom library
 Button2 btn1(BUTTON_1);
 Button2 btn2(BUTTON_2);
 
+Adafruit_BME280 bme;
+boolean bme_available=false;
+Adafruit_Sensor *bme_temp = bme.getTemperatureSensor();
+Adafruit_Sensor *bme_pressure = bme.getPressureSensor();
+Adafruit_Sensor *bme_humidity = bme.getHumiditySensor();
+
 char buff[512];
 int vref = 1100;
-int btnCick = false;
+int btnClick = false;
+
+// Datas
+float temperature = -1;
+float pressure = -1;
+float humidity = -1;
+
+short loopCnt = 0;
+// timing
+long lastCheck = 0;
+
+char chipId[23];
+
 
 //! Long time delay, it is recommended to use shallow sleep, which can effectively reduce the current consumption
 void espDelay(int ms)
@@ -54,7 +88,7 @@ void showVoltage()
 void button_init()
 {
     btn1.setLongClickHandler([](Button2 & b) {
-        btnCick = false;
+        btnClick = false;
         int r = digitalRead(TFT_BL);
         tft.fillScreen(TFT_BLACK);
         tft.setTextColor(TFT_GREEN, TFT_BLACK);
@@ -70,11 +104,11 @@ void button_init()
     });
     btn1.setPressedHandler([](Button2 & b) {
         Serial.println("Detect Voltage..");
-        btnCick = true;
+        btnClick = true;
     });
 
     btn2.setPressedHandler([](Button2 & b) {
-        btnCick = false;
+        btnClick = false;
         Serial.println("btn press wifi scan");
         wifi_scan();
     });
@@ -120,12 +154,12 @@ void wifi_scan()
     WiFi.mode(WIFI_OFF);
 }
 
-void setup()
-{
-    Serial.begin(115200);
-    Serial.println("Start");
-    
-    Serial.println("tft init");
+void initChipId() {
+  uint64_t chipMac = ESP.getEfuseMac(); //The chip ID is essentially its MAC address(length: 6 bytes).
+  snprintf(chipId, 23, "%04X%08X", (uint16_t)(chipMac >> 32), (uint32_t)chipMac);
+}
+
+void initTft() {
     tft.init();
     tft.setRotation(1);
     Serial.println("tft to black");
@@ -147,7 +181,7 @@ void setup()
     tft.setSwapBytes(true);
     Serial.println("tft push image");
     tft.pushImage(0, 0,  240, 135, ttgo);
-    espDelay(5000);
+    espDelay(2000);
 
     Serial.println("tft colors");
     tft.setRotation(0);
@@ -160,10 +194,10 @@ void setup()
         tft.fillScreen(TFT_GREEN);
         espDelay(250);
     }
+    tft.fillScreen(TFT_BLACK);
+}
 
-    Serial.println("button init");
-    button_init();
-
+void initVref() {
     esp_adc_cal_characteristics_t adc_chars;
     esp_adc_cal_value_t val_type = esp_adc_cal_characterize((adc_unit_t)ADC_UNIT_1, (adc_atten_t)ADC1_CHANNEL_6, (adc_bits_width_t)ADC_WIDTH_BIT_12, 1100, &adc_chars);
     //Check type of calibration value used to characterize ADC
@@ -177,12 +211,115 @@ void setup()
     }
 }
 
+// Scan the I2C bus
+// On each address, call the callback function with the address and result.
+// If result==0, address has a device
+void scanI2CBus(byte from_addr, byte to_addr, 
+                void(*callback)(byte address, byte result) ) {
+  byte rc;
+  for( byte addr = from_addr; addr <= to_addr; addr++ ) {
+    Wire.beginTransmission(addr);
+    rc = Wire.endTransmission();
+    callback( addr, rc );
+  }
+}
 
+// Called when address is scanned scanI2CBus()
+// If result==0, address has a device
+void scanFunc( byte addr, byte result ) {
+  Serial.print("addr: ");
+  Serial.print(addr, HEX);
+  Serial.print( (result==0) ? " found!":"       ");
+  Serial.print( (addr%4) ? "\t":"\n");
+}
+
+void initBME() {
+  if (!bme.begin(0x76, &Wire)) {
+    Serial.println(F("Could not find a valid BME280 sensor, check wiring, address, sensor ID!"));
+    Serial.print(F("SensorID was: 0x")); Serial.println(bme.sensorID(), 16);
+    Serial.print(F("        ID of 0xFF probably means a bad address, a BMP 180 or BMP 085\n"));
+    Serial.print(F("   ID of 0x56-0x58 represents a BMP 280,\n"));
+    Serial.print(F("        ID of 0x60 represents a BME 280.\n"));
+    Serial.print(F("        ID of 0x61 represents a BME 680.\n"));
+    Serial.println(F("Will process to I2C scan"));
+    bme_available=false;
+  } else {
+    bme_available=true;
+  }
+  
+  bme_temp->printSensorDetails();
+  bme_pressure->printSensorDetails();
+  bme_humidity->printSensorDetails();
+}
+
+void setup()
+{
+    Serial.begin(115200);
+    Serial.println("Start");
+    
+    initChipId();
+    Serial.print("Chip ID : ");
+    Serial.println(chipId);
+
+    Serial.println("tft init");
+    initTft();
+
+    Serial.println("button init");
+    button_init();
+
+    Serial.println("vref init");
+    initVref();
+
+    Serial.println("Sensor init");
+    // Wire.begin(IC_DATA, IC_CLK);
+    initBME();
+}
 
 void loop()
 {
-    if (btnCick) {
-        showVoltage();
-    }
     button_loop();
+    long now = millis();
+    if (now - lastCheck > LOOP_WAIT) {
+        lastCheck = now;
+        if (btnClick) {
+            showVoltage();
+        }
+        if (!bme_available) {
+            scanI2CBus(i2c_scan_start_address, i2c_scan_end_address, scanFunc);
+        } else {
+            readSensor();
+            displaySensor(temperature, humidity);
+            delay(1000);
+        }
+        espDelay(LOOP_WAIT);
+    }
+}
+
+void readSensor() {
+  sensors_event_t temp_event, pressure_event, humidity_event;
+  bme_temp->getEvent(&temp_event);
+  bme_pressure->getEvent(&pressure_event);
+  bme_humidity->getEvent(&humidity_event);
+
+  temperature  = temp_event.temperature;
+  humidity = humidity_event.relative_humidity;
+  pressure = pressure_event.pressure;
+
+  Serial.print(F("Temperature = "));
+  Serial.print(temperature);
+  Serial.println(" °C");
+
+  Serial.print(F("Humidity = "));
+  Serial.print(humidity);
+  Serial.println(" %");
+
+  Serial.print(F("Pressure = "));
+  Serial.print(pressure);
+  Serial.println(" hPa");
+
+  Serial.println();
+}
+
+void displaySensor(float aTemperature, float aHumidity) {
+
 }
