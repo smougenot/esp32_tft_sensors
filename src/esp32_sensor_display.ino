@@ -122,8 +122,8 @@ void button_init()
 
   btn2.setPressedHandler([](Button2 &b) {
     btnClick = false;
-    Serial.println("btn press wifi scan");
-    wifi_scan();
+    Serial.println("btn press config portal");
+    initWifiManager();
   });
 }
 
@@ -131,44 +131,6 @@ void button_loop()
 {
   btn1.loop();
   btn2.loop();
-}
-
-void wifi_scan()
-{
-  tft.setTextColor(TFT_GREEN, TFT_BLACK);
-  tft.fillScreen(TFT_BLACK);
-  tft.setTextDatum(MC_DATUM);
-  tft.setRotation(1);
-  tft.setTextSize(2);
-
-  tft.drawString("Scan Network", tft.width() / 2, tft.height() / 2);
-
-  WiFi.mode(WIFI_STA);
-  WiFi.disconnect();
-  delay(100);
-
-  int16_t n = WiFi.scanNetworks();
-  tft.fillScreen(TFT_BLACK);
-  if (n == 0)
-  {
-    tft.drawString("no networks found", tft.width() / 2, tft.height() / 2);
-  }
-  else
-  {
-    tft.setTextDatum(TL_DATUM);
-    tft.setCursor(0, 0);
-    Serial.printf("Found %d net\n", n);
-    for (int i = 0; i < n; ++i)
-    {
-      sprintf(buff,
-              "[%d]:%s(%d)",
-              i + 1,
-              WiFi.SSID(i).c_str(),
-              WiFi.RSSI(i));
-      tft.println(buff);
-    }
-  }
-  WiFi.mode(WIFI_OFF);
 }
 
 void configModeCallback(WiFiManager *myWiFiManager)
@@ -180,6 +142,13 @@ void configModeCallback(WiFiManager *myWiFiManager)
   displayWifiManager(myWiFiManager->getConfigPortalSSID(), WiFi.softAPIP());
 }
 
+void saveWifiCallback(){
+  Serial.println("[CALLBACK] save Wifi callback fired");
+}
+
+void saveParamCallback(){
+  Serial.println("[CALLBACK] param callback fired");
+}
 
 void configLoad() {
   Serial.println("Loading config");
@@ -193,6 +162,7 @@ void configLoad() {
 
 void configSave() {
   Serial.println("Saving config");
+
   EEPROM.begin(512);
   EEPROM.put(0, settings);
   if (EEPROM.commit()) {
@@ -211,6 +181,8 @@ void initWifiManager()
   WiFiManager wifiManager;
   //set callback that gets called when connecting to previous WiFi fails, and enters Access Point mode
   wifiManager.setAPCallback(configModeCallback);
+  wifiManager.setSaveConfigCallback(saveWifiCallback);
+  wifiManager.setSaveParamsCallback(saveParamCallback);
 
   // Custom params for MQTT
   WiFiManagerParameter custom_mqtt_server("server", "mqtt server", settings.mqtt_server, 120);
@@ -218,7 +190,21 @@ void initWifiManager()
   WiFiManagerParameter custom_mqtt_user("user", "mqtt user", settings.mqtt_user, 120);
   WiFiManagerParameter custom_mqtt_password("password", "mqtt password", settings.mqtt_password, 120);
 
+  //set static ip
+  // wifiManager.setSTAStaticIPConfig(IPAddress(10,0,1,99), IPAddress(10,0,1,1), IPAddress(255,255,255,0)); // set static ip,gw,sn
+  // wifiManager.setShowStaticFields(true); // force show static ip fields
+  // wifiManager.setShowDnsFields(true);    // force show dns field always
+
   wifiManager.setConfigPortalTimeout(120); // auto close configportal after n seconds
+
+  wifiManager.setCaptivePortalEnable(false); // disable captive portal redirection
+  // wifiManager.setAPClientCheck(true); // avoid timeout if client connected to softap
+
+  // wifi scan settings
+  // wifiManager.setRemoveDuplicateAPs(false); // do not remove duplicate ap names (true)
+  // wifiManager.setMinimumSignalQuality(20);  // set min RSSI (percentage) to show in scans, null = 8%
+  // wifiManager.setShowInfoErase(false);      // do not show erase button on info page
+  // wifiManager.setScanDispPerc(true);       // show RSSI as percentage not graph icons
 
   // set dark theme
   wifiManager.setClass("invert");
@@ -232,7 +218,7 @@ void initWifiManager()
     ESP.restart();
   }
 
-  Serial.println("Saving config");
+  Serial.println("Reading config");
 
   strcpy(settings.mqtt_server, custom_mqtt_server.getValue());
   strcpy(settings.mqtt_port, custom_mqtt_port.getValue());
@@ -455,8 +441,8 @@ void displayWifiManager(String wifiAP, IPAddress configAddress)
 
   sprintf(buff,
           "%s\n%s",
-          wifiAP,
-          configAddress);
+          wifiAP.c_str(),
+          configAddress.toString().c_str());
   tft.println(buff);
 }
 
