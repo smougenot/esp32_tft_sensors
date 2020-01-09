@@ -61,7 +61,7 @@ Adafruit_Sensor *bme_humidity = bme.getHumiditySensor();
 
 char buff[512];
 int vref = 1100;
-int btnClick = false;
+int btn1Clicked = false;
 
 // Datas
 float temperature = -1;
@@ -100,30 +100,17 @@ void showVoltage()
 
 void button_init()
 {
-  btn1.setLongClickHandler([](Button2 &b) {
-    btnClick = false;
-    int r = digitalRead(TFT_BL);
-    tft.fillScreen(TFT_BLACK);
-    tft.setTextColor(TFT_GREEN, TFT_BLACK);
-    tft.setTextDatum(MC_DATUM);
-    tft.drawString("Press again to wake up", tft.width() / 2, tft.height() / 2);
-    espDelay(6000);
-    digitalWrite(TFT_BL, !r);
-
-    tft.writecommand(TFT_DISPOFF);
-    tft.writecommand(TFT_SLPIN);
-    esp_sleep_enable_ext1_wakeup(GPIO_SEL_35, ESP_EXT1_WAKEUP_ALL_LOW);
-    esp_deep_sleep_start();
-  });
   btn1.setPressedHandler([](Button2 &b) {
     Serial.println("Detect Voltage..");
-    btnClick = true;
+    btn1Clicked != btn1Clicked;
   });
 
   btn2.setPressedHandler([](Button2 &b) {
-    btnClick = false;
-    Serial.println("btn press config portal");
-    initWifiManager();
+    Serial.println("btn press config reset");
+    // resetSettings();
+    WiFiManager wm;
+    wm.resetSettings();
+    ESP.restart();
   });
 }
 
@@ -142,15 +129,18 @@ void configModeCallback(WiFiManager *myWiFiManager)
   displayWifiManager(myWiFiManager->getConfigPortalSSID(), WiFi.softAPIP());
 }
 
-void saveWifiCallback(){
+void saveWifiCallback()
+{
   Serial.println("[CALLBACK] save Wifi callback fired");
 }
 
-void saveParamCallback(){
+void saveParamCallback()
+{
   Serial.println("[CALLBACK] param callback fired");
 }
 
-void configLoad() {
+void configLoad()
+{
   Serial.println("Loading config");
 
   EEPROM.begin(512);
@@ -160,17 +150,27 @@ void configLoad() {
   Serial.println("Config loaded");
 }
 
-void configSave() {
+void configSave()
+{
   Serial.println("Saving config");
 
   EEPROM.begin(512);
   EEPROM.put(0, settings);
-  if (EEPROM.commit()) {
-      Serial.println("Config saved");
-  } else {
-      Serial.println("EEPROM error");
+  if (EEPROM.commit())
+  {
+    Serial.println("Config saved");
+  }
+  else
+  {
+    Serial.println("EEPROM error");
   }
   EEPROM.end();
+}
+
+void resetSettings() {
+  WMSettings blank;
+  settings = blank;
+  configSave();
 }
 
 void initWifiManager()
@@ -189,6 +189,11 @@ void initWifiManager()
   WiFiManagerParameter custom_mqtt_port("port", "mqtt port", settings.mqtt_port, 6);
   WiFiManagerParameter custom_mqtt_user("user", "mqtt user", settings.mqtt_user, 120);
   WiFiManagerParameter custom_mqtt_password("password", "mqtt password", settings.mqtt_password, 120);
+
+  wifiManager.addParameter(&custom_mqtt_server);
+  wifiManager.addParameter(&custom_mqtt_port);
+  wifiManager.addParameter(&custom_mqtt_password);
+  wifiManager.addParameter(&custom_mqtt_user);
 
   //set static ip
   // wifiManager.setSTAStaticIPConfig(IPAddress(10,0,1,99), IPAddress(10,0,1,1), IPAddress(255,255,255,0)); // set static ip,gw,sn
@@ -210,7 +215,9 @@ void initWifiManager()
   wifiManager.setClass("invert");
 
   String ssid = "ESP_autoconnect_" + String(chipId);
-  if (!wifiManager.autoConnect(ssid.c_str(), "password"))
+  String pwd = "password";
+
+  if (!wifiManager.autoConnect(ssid.c_str(), pwd.c_str()))
   {
     Serial.println("failed to connect and hit timeout");
     espDelay(3000);
@@ -379,22 +386,26 @@ void loop()
   if (now - lastCheck > LOOP_WAIT)
   {
     lastCheck = now;
-    if (btnClick)
+    if (btn1Clicked)
     {
       showVoltage();
     }
-    if (!bme_available)
-    {
-      scanI2CBus(i2c_scan_start_address, i2c_scan_end_address, scanFunc);
-    }
     else
     {
-      readSensor();
-      readVoltage();
-      displaySensor(temperature, humidity, battery_voltage);
-      delay(1000);
+      if (!bme_available)
+      {
+        scanI2CBus(i2c_scan_start_address, i2c_scan_end_address, scanFunc);
+      }
+      else
+      {
+        readSensor();
+        readVoltage();
+        displaySensor(temperature, humidity, battery_voltage);
+        delay(1000);
+      }
     }
-    espDelay(LOOP_WAIT);
+    // Deep sleep to ave energy
+    // espDelay(LOOP_WAIT);
   }
 }
 
