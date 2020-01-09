@@ -192,8 +192,8 @@ void initWifiManager()
 
   wifiManager.addParameter(&custom_mqtt_server);
   wifiManager.addParameter(&custom_mqtt_port);
-  wifiManager.addParameter(&custom_mqtt_password);
   wifiManager.addParameter(&custom_mqtt_user);
+  wifiManager.addParameter(&custom_mqtt_password);
 
   //set static ip
   // wifiManager.setSTAStaticIPConfig(IPAddress(10,0,1,99), IPAddress(10,0,1,1), IPAddress(255,255,255,0)); // set static ip,gw,sn
@@ -463,11 +463,11 @@ void displaySensor(float aTemperature, float aHumidity, float aVoltage)
   tft.setTextDatum(TL_DATUM);
   tft.setRotation(0);
   tft.setTextColor(TFT_GREEN, TFT_BLACK);
-  tft.setTextSize(2);
+  tft.setTextSize(3);
   tft.setCursor(0, 0);
 
   sprintf(buff,
-          " %.2f C\n %.2f %%\n  %.2f V",
+          "%.2f C\n%.2f %%\n %.2f V",
           aTemperature,
           aHumidity,
           aVoltage);
