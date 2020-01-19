@@ -77,9 +77,9 @@ long lastCheck = 0;
 
 char chipId[23];
 
-// const String topicCmd    = "esp/" + String(ESP.getChipId()) + "/cmd";
-// const String topicStatus = "esp/" + String(ESP.getChipId()) + "/status";
-// const String clientId = "ESP8266Client" + String(ESP.getChipId()) ;
+String topicCmd;
+String topicStatus;
+String mqttClientId;
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -337,8 +337,54 @@ void initBME() {
 }
 
 void initMqtt() {
-  // client.setClient("ESP32Client" + String(chipId));
-  // client.setServer(settings.mqtt_server, String(settings.mqtt_port).toInt());
+  mqttClientId = "ESP32Client" + String(chipId);
+  topicCmd = "esp/" + String(chipId) + "/cmd";
+  topicStatus = "esp/" + String(chipId) + "/status";
+
+  client.setServer(settings.mqtt_server, String(settings.mqtt_port).toInt());
+  mqttReconnect();
+}
+
+void mqttReconnect() {
+  Serial.println("reconnect");
+
+  //reconnect wifi first
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("  no Wifi : reset");
+    return;
+  }
+
+  int cpt = 5;
+
+  // Loop until we're reconnected to MQTT server
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    // Attempt to connect
+    if (client.connect(mqttClientId.c_str(), settings.mqtt_user, settings.mqtt_password)) {
+      Serial.print("connected with id : ");
+      Serial.println(mqttClientId);
+      // Once connected, publish an announcement...
+      client.publish(topicStatus.c_str(), "hello world");
+      // Serial.print("subscribing to : ");
+      // Serial.println(topicCmd);
+      // if (client.subscribe(topicCmd.c_str())) {
+      //   Serial.println(" succeeded");
+      // } else {
+      //   Serial.println(" failed");
+      // }
+    } else {
+      if (--cpt == 0) {
+        Serial.println("  no MQTT : reset");
+        return;
+      }
+
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 5 seconds");
+      // Wait 5 seconds before retrying
+      espDelay(5000);
+    }
+  }
 }
 
 void setup() {
@@ -385,12 +431,39 @@ void loop() {
         readSensor();
         readVoltage();
         displaySensor(temperature, humidity, battery_voltage);
-        delay(1000);
+        mqttReconnect();
+        publishStatus();
       }
     }
     // Deep sleep to ave energy
-    // espDelay(LOOP_WAIT);
+    espDelay(LOOP_WAIT);
   }
+}
+
+void publishStatus() {
+  if(client.connected()){
+    Serial.println("publishing data to MQTT");
+    publish("battery", battery_voltage);
+    publish("temperature", temperature);
+    publish("humidity", humidity);
+    publish("pressure", pressure);
+  } else {
+    Serial.println("No MQTT channel available to publish data");
+  }
+}
+
+void publish(const char* statusSuffix, float value) {
+    char topic[50];
+    char payload[50];
+    sprintf(topic, "%s/%s", topicStatus.c_str(), statusSuffix);
+    sprintf(payload, "%.2f", value);
+
+    // Serial.print("topic: ");
+    // Serial.print(topic);
+    // Serial.print(" payload: ");
+    // Serial.println(payload);
+
+    client.publish(topic, payload);
 }
 
 void readVoltage() {
