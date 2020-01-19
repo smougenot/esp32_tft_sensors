@@ -345,13 +345,23 @@ void initMqtt() {
   mqttReconnect();
 }
 
+void mqTTCheckClient() {
+  if (!client.connected()) {
+    mqttReconnect();
+  }
+  client.loop();
+}
+
 void mqttReconnect() {
   Serial.println("reconnect");
 
   //reconnect wifi first
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("  no Wifi : reset");
-    return;
+    Serial.println("  no Wifi,starting it");
+    initWifiManager();
+    if (WiFi.status() != WL_CONNECTED) {
+      ESP.restart();
+    }
   }
 
   int cpt = 5;
@@ -431,12 +441,12 @@ void loop() {
         readSensor();
         readVoltage();
         displaySensor(temperature, humidity, battery_voltage);
-        mqttReconnect();
+        mqTTCheckClient();
         publishStatus();
       }
     }
     // Deep sleep to ave energy
-    espDelay(LOOP_WAIT);
+    // espDelay(LOOP_WAIT);
   }
 }
 
