@@ -84,6 +84,20 @@ String mqttClientId;
 WiFiClient espClient;
 PubSubClient client(espClient);
 
+// time
+const char* ntpServer = "fr.pool.ntp.org";
+const long  gmtOffset_sec = 3600;
+const int   daylightOffset_sec = 3600;
+struct tm timeinfo;
+
+void printLocalTime() {
+  if(!getLocalTime(&timeinfo)) {
+    Serial.println("Failed to obtain time");
+    return;
+  }
+  Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
+}
+
 //! Long time delay, it is recommended to use shallow sleep, which can
 //! effectively reduce the current consumption
 void espDelay(int ms) {
@@ -97,26 +111,26 @@ void showVoltage() {
   if (millis() - timeStamp > 1000) {
     timeStamp = millis();
     readVoltage();
-    String voltage = "Voltage :" + String(battery_voltage) + "V";
+    String voltage = String(battery_voltage) + "V";
     Serial.println(voltage);
     tft.fillScreen(TFT_BLACK);
     tft.setTextDatum(MC_DATUM);
-    tft.drawString(voltage, tft.width() / 2, tft.height() / 2);
+    tft.drawString(voltage, 0, 0);
   }
 }
 
 void button_init() {
   btn1.setPressedHandler([](Button2 &b) {
     Serial.println("Detect Voltage..");
-    btn1Clicked != btn1Clicked;
+    btn1Clicked = !btn1Clicked;
   });
 
   btn2.setPressedHandler([](Button2 &b) {
-    Serial.println("btn press config reset");
-    // resetSettings();
-    WiFiManager wm;
-    wm.resetSettings();
-    ESP.restart();
+    Serial.println("btn press both for config reset");
+    if(btn2.isPressed() && btn1.isPressed()) {
+      resetSettings();
+      ESP.restart();
+    }
   });
 }
 
@@ -163,6 +177,9 @@ void configSave() {
 }
 
 void resetSettings() {
+  WiFiManager wm;
+  wm.resetSettings();
+
   WMSettings blank;
   settings = blank;
   configSave();
@@ -296,11 +313,13 @@ void initVref() {
 void scanI2CBus(byte from_addr, byte to_addr,
                 void (*callback)(byte address, byte result)) {
   byte rc;
+  Serial.println("I2C scan started");
   for (byte addr = from_addr; addr <= to_addr; addr++) {
     Wire.beginTransmission(addr);
     rc = Wire.endTransmission();
     callback(addr, rc);
   }
+  Serial.println("\nI2C scan ended");
 }
 
 // Called when address is scanned scanI2CBus()
@@ -342,7 +361,7 @@ void initMqtt() {
   topicStatus = "esp/" + String(chipId) + "/status";
 
   client.setServer(settings.mqtt_server, String(settings.mqtt_port).toInt());
-  mqttReconnect();
+//  mqttReconnect();
 }
 
 void mqTTCheckClient() {
@@ -364,7 +383,7 @@ void mqttReconnect() {
     }
   }
 
-  int cpt = 5;
+  int cpt = 2;
 
   // Loop until we're reconnected to MQTT server
   while (!client.connected()) {
@@ -425,6 +444,10 @@ void setup() {
 
   // Init MQTT client
   initMqtt();
+
+  // Confire local time references
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  printLocalTime();
 }
 
 void loop() {
@@ -432,6 +455,10 @@ void loop() {
   long now = millis();
   if (now - lastCheck > LOOP_WAIT) {
     lastCheck = now;
+    printLocalTime();
+    displayReset();
+    displayTime();
+
     if (btn1Clicked) {
       showVoltage();
     } else {
@@ -441,16 +468,17 @@ void loop() {
         readSensor();
         readVoltage();
         displaySensor(temperature, humidity, battery_voltage);
-        mqTTCheckClient();
         publishStatus();
       }
     }
+
     // Deep sleep to ave energy
     // espDelay(LOOP_WAIT);
   }
 }
 
 void publishStatus() {
+  mqTTCheckClient();
   if(client.connected()){
     Serial.println("publishing data to MQTT");
     publish("battery", battery_voltage);
@@ -518,14 +546,28 @@ void displayWifiManager(String wifiAP, IPAddress configAddress) {
   tft.println(buff);
 }
 
-void displaySensor(float aTemperature, float aHumidity, float aVoltage) {
+void displayReset() {
   tft.fillScreen(TFT_BLACK);
   tft.setTextDatum(TL_DATUM);
   tft.setRotation(0);
   tft.setTextColor(TFT_GREEN, TFT_BLACK);
+}
+
+void displaySensor(float aTemperature, float aHumidity, float aVoltage) {
   tft.setTextSize(3);
   tft.setCursor(0, 0);
 
   sprintf(buff, "%.2f C\n%.2f %%\n %.2f V", aTemperature, aHumidity, aVoltage);
+  tft.println(buff);
+}
+
+void displayTime() {
+  Serial.println("Display time");
+
+  tft.setTextColor(TFT_OLIVE, TFT_BLACK);
+  tft.setTextSize(3);
+  tft.setCursor(25, 150);
+
+  sprintf(buff, "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
   tft.println(buff);
 }
