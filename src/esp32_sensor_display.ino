@@ -44,10 +44,9 @@ typedef struct {
 
 WMSettings settings;
 
-// I2C pins defaults on TTGO-Display
-// #define IC_CLK  22
-// #define IC_DATA 21
-// In case no device is responding, initiate a I2C bus scan
+// I2C pins defaults (change if required)
+// #define IC_CLK  (5)
+// #define IC_DATA (4)
 byte i2c_scan_start_address = 8;  // lower addresses are reserved to prevent conflicts with other protocols
 byte i2c_scan_end_address = 119;  // higher addresses unlock other modes, like 10-bit addressing
 
@@ -90,6 +89,7 @@ const long  gmtOffset_sec = 3600;
 const int   daylightOffset_sec = 3600;
 struct tm timeinfo;
 
+// Writes time on Serial
 void printLocalTime() {
   if(!getLocalTime(&timeinfo)) {
     Serial.println("Failed to obtain time");
@@ -106,38 +106,7 @@ void espDelay(int ms) {
   esp_light_sleep_start();
 }
 
-void showVoltage() {
-  static uint64_t timeStamp = 0;
-  if (millis() - timeStamp > 1000) {
-    timeStamp = millis();
-    readVoltage();
-    String voltage = String(battery_voltage) + "V";
-    Serial.println(voltage);
-    tft.fillScreen(TFT_BLACK);
-    tft.setTextDatum(MC_DATUM);
-    tft.drawString(voltage, 0, 0);
-  }
-}
-
-void button_init() {
-  btn1.setPressedHandler([](Button2 &b) {
-    Serial.println("Detect Voltage..");
-    btn1Clicked = !btn1Clicked;
-  });
-
-  btn2.setPressedHandler([](Button2 &b) {
-    Serial.println("btn press both for config reset");
-    if(btn2.isPressed() && btn1.isPressed()) {
-      resetSettings();
-      ESP.restart();
-    }
-  });
-}
-
-void button_loop() {
-  btn1.loop();
-  btn2.loop();
-}
+// Settings management ----------------------------------------------------
 
 void configModeCallback(WiFiManager *myWiFiManager) {
   Serial.println("Entered config mode");
@@ -184,6 +153,9 @@ void resetSettings() {
   settings = blank;
   configSave();
 }
+
+
+// Init -------------------------------------------------------------------
 
 void initWifiManager() {
   Serial.println("initWifiManager");
@@ -416,6 +388,23 @@ void mqttReconnect() {
   }
 }
 
+// Button management ------------------------------------------------------
+
+void button_init() {
+  btn1.setPressedHandler([](Button2 &b) {
+    Serial.println("Detect Voltage..");
+    btn1Clicked = !btn1Clicked;
+  });
+
+  btn2.setPressedHandler([](Button2 &b) {
+    Serial.println("btn press both for config reset");
+    if(btn2.isPressed() && btn1.isPressed()) {
+      resetSettings();
+      ESP.restart();
+    }
+  });
+}
+
 void setup() {
   Serial.begin(115200);
   Serial.println("Start");
@@ -450,6 +439,24 @@ void setup() {
   printLocalTime();
 }
 
+// Main loop --------------------------------------------------------------
+
+void button_loop() {
+  btn1.loop();
+  btn2.loop();
+}
+
+// Reads voltage and dispays it on TFT
+// Updates every seconds
+void showVoltage() {
+  static uint64_t timeStamp = 0;
+  if (millis() - timeStamp > 1000) {
+    timeStamp = millis();
+    readVoltage();
+    displayVoltage(battery_voltage);
+  }
+}
+
 void loop() {
   button_loop();
   long now = millis();
@@ -477,6 +484,8 @@ void loop() {
   }
 }
 
+// Data push --------------------------------------------------------------
+
 void publishStatus() {
   mqTTCheckClient();
   if(client.connected()){
@@ -503,6 +512,8 @@ void publish(const char* statusSuffix, float value) {
 
     client.publish(topic, payload);
 }
+
+// Sensors read -----------------------------------------------------------
 
 void readVoltage() {
   uint16_t v = analogRead(ADC_PIN);
@@ -534,6 +545,8 @@ void readSensor() {
   Serial.println();
 }
 
+// TFT display ------------------------------------------------------------
+
 void displayWifiManager(String wifiAP, IPAddress configAddress) {
   tft.fillScreen(TFT_BLACK);
   tft.setTextDatum(TL_DATUM);
@@ -559,6 +572,14 @@ void displaySensor(float aTemperature, float aHumidity, float aVoltage) {
 
   sprintf(buff, "%.2f C\n%.2f %%\n %.2f V", aTemperature, aHumidity, aVoltage);
   tft.println(buff);
+}
+
+void displayVoltage(float aVoltage) {
+    String voltage = String(aVoltage) + "V";
+    Serial.println(voltage);
+    tft.fillScreen(TFT_BLACK);
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString(voltage, 0, 0);
 }
 
 void displayTime() {
