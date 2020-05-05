@@ -16,6 +16,8 @@
 // send MQTT messages
 #include <PubSubClient.h>
 
+#include <Adafruit_NeoPixel.h>
+
 #ifndef TFT_DISPOFF
 #define TFT_DISPOFF 0x28
 #endif
@@ -41,6 +43,135 @@ typedef struct {
   char mqtt_password[120] = "";
   int salt = EEPROM_SALT;
 } WMSettings;
+
+// Neopixel settings ------------------------------------------------------
+
+// Which pin on the Arduino is connected to the NeoPixels?
+// On a Trinket or Gemma we suggest changing this to 1:
+#define LED_PIN 17
+
+// How many NeoPixels are attached to the Arduino?
+#define LED_COUNT 12
+
+// Alignment of the pixel orientation (depends on the wireing + mounting)
+#define PIXEL_SHIFT 0
+
+// Hour animation settings
+
+// Number of times the hour display repeats
+#define HOUR_REPEAT 2
+// Delay between frames during background roll
+#define BACKGROUND_FRAME_WAIT 100
+// Delay between frames during foreground roll (hour counting)
+#define FOREGROUND_FRAME_WAIT 600
+// Delay at the end of the animation
+#define END_WAIT 1000
+
+// Neopixel Variables -----------------------------------------------------
+
+// Declare our NeoPixel strip object:
+Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
+// Argument 1 = Number of pixels in NeoPixel strip
+// Argument 2 = Arduino pin number (most are valid)
+// Argument 3 = Pixel type flags, add together as needed:
+//   NEO_KHZ800  800 KHz bitstream (most NeoPixel products w/WS2812 LEDs)
+//   NEO_KHZ400  400 KHz (classic 'v1' (not v2) FLORA pixels, WS2811 drivers)
+//   NEO_GRB     Pixels are wired for GRB bitstream (most NeoPixel products)
+//   NEO_RGB     Pixels are wired for RGB bitstream (v1 FLORA pixels, not v2)
+//   NEO_RGBW    Pixels are wired for RGBW bitstream (NeoPixel RGBW products)
+
+// Colors schemes ----------------------------------------------------------
+
+// Basics
+
+const uint32_t color_off = strip.Color(0, 0, 0);
+const uint32_t color_white = strip.Color(85, 85, 85);
+const uint32_t color_blue = strip.Color(0, 0, 255);
+const uint32_t color_green = strip.Color(0, 255, 0);
+const uint32_t color_red = strip.Color(255, 0, 0);
+
+//tequila sunrise color scheme
+
+const uint32_t color_orange = strip.Color(173, 82, 0);              // redest orange
+const uint32_t color_slightly_yellower = strip.Color(152, 103, 0);  //slightly yellower
+const uint32_t color_yellow = strip.Color(128, 128, 0);             //yellow
+const uint32_t color_redish = strip.Color(228, 0, 27);              //red
+
+//blue, green, & purple color scheme
+
+const uint32_t color_magenta = strip.Color(128, 0, 128);    // magenta
+const uint32_t color_purple = strip.Color(71, 0, 184);      // purple
+const uint32_t color_royal_blue = strip.Color(0, 47, 208);  // royal blue
+const uint32_t color_greenish = strip.Color(0, 208, 47);    // green
+
+// Colors used -------------------------------------------------------------
+
+// One Instance of color settings for the clock
+class ColorScheme {
+ public:
+  uint32_t background;
+  uint32_t foreground;
+
+  ColorScheme(uint32_t aBackground, uint32_t aForeground);
+  void display();
+};
+
+ColorScheme::ColorScheme(uint32_t aBackground, uint32_t aForeground) {
+  background = aBackground;
+  foreground = aForeground;
+}
+
+// Do not use when Serial is not ready
+void ColorScheme::display() {
+  Serial.print("ColorScheme ");
+  Serial.print(background);
+  Serial.print(" ");
+  Serial.println(foreground);
+}
+
+ColorScheme color_scheme_bedtime = ColorScheme(
+    color_magenta,
+    color_royal_blue);
+ColorScheme color_scheme_sleep = ColorScheme(
+    color_royal_blue,
+    color_magenta);
+ColorScheme color_scheme_wake = ColorScheme(
+    color_royal_blue,
+    color_greenish);
+ColorScheme color_scheme_day = ColorScheme(
+    color_orange,
+    color_yellow);
+
+// Colors to use according to the hour of the day
+// TODO: change for a more clever way (more accurate changes, less redondancy)
+ColorScheme color_schemes[24] = {
+    color_scheme_sleep,    // 00h
+    color_scheme_sleep,    // 01h
+    color_scheme_sleep,    // 02h
+    color_scheme_sleep,    // 03h
+    color_scheme_sleep,    // 04h
+    color_scheme_sleep,    // 05h
+    color_scheme_sleep,    // 06h
+    color_scheme_wake,     // 07h
+    color_scheme_wake,     // 08h
+    color_scheme_wake,     // 09h
+    color_scheme_wake,     // 10h
+    color_scheme_day,      // 11h
+    color_scheme_day,      // 12h
+    color_scheme_day,      // 13h
+    color_scheme_day,      // 14h
+    color_scheme_day,      // 15h
+    color_scheme_day,      // 16h
+    color_scheme_day,      // 17h
+    color_scheme_day,      // 18h
+    color_scheme_day,      // 19h
+    color_scheme_bedtime,  // 20h
+    color_scheme_bedtime,  // 21h
+    color_scheme_sleep,    // 22h
+    color_scheme_sleep,    // 23h
+};
+
+// Variables --------------------------------------------------------------
 
 WMSettings settings;
 
@@ -388,6 +519,12 @@ void mqttReconnect() {
   }
 }
 
+void initStrip() {
+  strip.begin();           // INITIALIZE NeoPixel strip object (REQUIRED)
+  strip.show();            // Turn OFF all pixels ASAP
+  strip.setBrightness(5);  // Set BRIGHTNESS (max = 255)
+}
+
 // Button management ------------------------------------------------------
 
 void button_init() {
@@ -437,6 +574,9 @@ void setup() {
   // Confire local time references
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   printLocalTime();
+
+  // Neopixel strip
+  initStrip();
 }
 
 // Main loop --------------------------------------------------------------
@@ -478,6 +618,9 @@ void loop() {
         publishStatus();
       }
     }
+
+    // Animate hour on neopixel strip
+    displayHour(timeinfo.tm_hour);
 
     // Deep sleep to ave energy
     // espDelay(LOOP_WAIT);
@@ -592,3 +735,111 @@ void displayTime() {
   sprintf(buff, "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
   tft.println(buff);
 }
+
+// Some functions of to display time on neopixel strip --------------------
+
+// Animation,
+// Display hour
+// Choose colors according to settings
+// repeat according to settings
+// - hourOfTheDay, the hour number (0-24)
+void displayHour(uint16_t hourOfTheDay) {
+  Serial.print("Begin displayHour ");
+  Serial.println(hourOfTheDay);
+
+  ColorScheme colors = color_schemes[hourOfTheDay % 24];
+  for (int i = 0; i < HOUR_REPEAT; i++) {
+    displayHour(colors.background, colors.foreground, hourOfTheDay);
+    rainbow(1, 5);
+  }
+}
+
+// Animation,
+// First, wipes the clock using background color
+// Second, one by one, turns on the amout of hours
+void displayHour(uint32_t backgroundcolor, uint32_t foregroundcolor, uint16_t hour) {
+  Serial.print("Begin displayHour ");
+  Serial.print(backgroundcolor);
+  Serial.print(" ");
+  Serial.print(foregroundcolor);
+  Serial.print(" ");
+  Serial.println(hour);
+
+  strip.fill(color_white, 0, 0);
+  colorWipe(backgroundcolor, BACKGROUND_FRAME_WAIT);                // Fill the whole clock
+  delay(FOREGROUND_FRAME_WAIT);                                     // pause
+  colorWipe(foregroundcolor, hour % 12, 1, FOREGROUND_FRAME_WAIT);  // Fill the hours only
+  delay(END_WAIT);                                                  // pause
+}
+
+// Some functions of our own for creating animated effects ----------------
+
+// Fill strip pixels one after another with a color. Strip is NOT cleared
+// first; anything there will be covered pixel by pixel. Pass in color
+// (as a single 'packed' 32-bit value, which you can get by calling
+// strip.Color(red, green, blue) as shown in the loop() function above),
+// and a delay time (in milliseconds) between pixels.
+void colorWipe(uint32_t color, int wait) {
+  colorWipe(color, strip.numPixels(), 0, wait);
+}
+
+// Covered n first pixel of the strip one after another with a color.
+// Strip is NOT cleared
+// first; anything there will be covered pixel by pixel.
+// - color,
+// (as a single 'packed' 32-bit value, which you can get by calling
+// strip.Color(red, green, blue) as shown in the loop() function above),
+// - length, number of pixels
+// - offset, position of the first pixel to change
+// - Wait, delay time (in milliseconds) between pixels.
+void colorWipe(uint32_t color, uint16_t length, uint16_t offset, int wait) {
+  Serial.print("Begin colorWipe ");
+  Serial.print(color);
+  Serial.print(" ");
+  Serial.print(length);
+  Serial.print(" ");
+  Serial.print(offset);
+  Serial.print(" ");
+  Serial.println(wait);
+
+  for (int i = 0; i < min(length, strip.numPixels()); i++) {  // For each pixel in strip...
+    strip.setPixelColor(
+        (i + offset + PIXEL_SHIFT) % strip.numPixels(),
+        color);    //  Set pixel's color (in RAM)
+    strip.show();  //  Update strip to match
+    delay(wait);   //  Pause for a moment
+  }
+}
+
+// Rainbow cycle along whole strip.
+// Full Rotation is 256 frames.
+// Lap, number of full rotations
+// wait, delay time (in ms) between frames.
+void rainbow(int lap, int wait) {
+  Serial.print("Begin rainbow ");
+  Serial.print(lap);
+  Serial.print(" ");
+  Serial.println(wait);
+
+  // Hue of first pixel runs 5 complete loops through the color wheel.
+  // Color wheel has a range of 65536 but it's OK if we roll over, so
+  // just count from 0 to 5*65536. Adding 256 to firstPixelHue each time
+  // means we'll make 5*65536/256 = 1280 passes through this outer loop:
+  for (long firstPixelHue = 0; firstPixelHue < lap * 65536; firstPixelHue += 256) {
+    for (int i = 0; i < strip.numPixels(); i++) {  // For each pixel in strip...
+      // Offset pixel hue by an amount to make one full revolution of the
+      // color wheel (range of 65536) along the length of the strip
+      // (strip.numPixels() steps):
+      int pixelHue = firstPixelHue + (i * 65536L / strip.numPixels());
+      // strip.ColorHSV() can take 1 or 3 arguments: a hue (0 to 65535) or
+      // optionally add saturation and value (brightness) (each 0 to 255).
+      // Here we're using just the single-argument hue variant. The result
+      // is passed through strip.gamma32() to provide 'truer' colors
+      // before assigning to each pixel:
+      strip.setPixelColor(i, strip.gamma32(strip.ColorHSV(pixelHue)));
+    }
+    strip.show();  // Update strip with new contents
+    delay(wait);   // Pause for a moment
+  }
+}
+
