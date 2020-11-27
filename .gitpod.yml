@@ -3,7 +3,6 @@ vscode:
     - ms-vscode.cpptools@0.26.2:Pq/tmf2WN3SanVzB4xZc1g== # to add C/C++ extension
 
 tasks:
-  - init: |
-      pip3 install -U platformio
+  - init: pip3 install -U platformio
     before: command -v platformio >/dev/null 2>&1  && platformio update
     command: platformio run
