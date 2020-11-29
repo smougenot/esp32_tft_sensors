@@ -1,3 +1,4 @@
+[![Gitpod ready-to-code](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod)](https://gitpod.io/#https://github.com/smougenot/esp32_tft_sensors/)
 [![Build Status](https://travis-ci.org/smougenot/esp32_tft_sensors.svg?branch=master)](https://travis-ci.org/smougenot/esp32_tft_sensors)
 [![CodeFactor](https://www.codefactor.io/repository/github/smougenot/esp32_tft_sensors/badge)](https://www.codefactor.io/repository/github/smougenot/esp32_tft_sensors)
 
